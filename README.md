@@ -89,3 +89,48 @@ wrote include/generated/cronet_weights_fp16_words.hpp
 ```
 
 The generated arrays store raw IEEE binary16 payloads as `std::uint16_t`. The Vitis HLS kernel should keep these as ROMs and convert them to `half` at compute boundaries.
+
+Generate the direct HLS `half` ROM header used by the half debug checkpoint:
+
+```bash
+python3 scripts/gen_fp16_half_header.py ../layer_wise_weights/cronet_hls_fp16_vectors
+```
+
+Expected output:
+
+```text
+wrote include/generated/cronet_weights_fp16_half.hpp
+```
+
+## HLS half debug checkpoint
+
+This checkpoint is meant for the Vitis machine. It uses `hls_half.h`, stores named layer outputs as `half`, and compares them against `golden/fp16_torch_f32`.
+
+From the repository root on the Vitis machine:
+
+```bash
+export CRONET_VECTOR_ROOT=../layer_wise_weights/cronet_hls_fp16_vectors
+export CRONET_CASE=all
+export CRONET_ABS_TOL=2e-2
+export CRONET_REL_TOL=2e-2
+vitis_hls -f vitis/half_layerwise_csim.tcl
+```
+
+Expected final output:
+
+```text
+CASE sanity: PASS
+CASE ramp: PASS
+CASE sparse: PASS
+CASE random: PASS
+ALL HLS HALF LAYERWISE TESTS PASS
+```
+
+On this authoring machine, the same file can be syntax-smoked with a float-backed stub:
+
+```powershell
+g++ -std=c++11 -O2 -Wall -Wextra -DCRONET_USE_NATIVE_FLOAT_HALF -Iinclude src\cronet_half_debug.cpp tests\tb_half_layerwise.cpp -o build\tb_half_layerwise_native_stub.exe
+.\build\tb_half_layerwise_native_stub.exe ..\layer_wise_weights\cronet_hls_fp16_vectors all
+```
+
+That smoke test does not prove real HLS half behavior; it only catches C++ integration mistakes before handoff.
