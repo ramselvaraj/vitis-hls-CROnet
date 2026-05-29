@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.tcl text eol=lf
+*.py text eol=lf
+Makefile text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
