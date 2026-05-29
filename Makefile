@@ -66,6 +66,7 @@ vitis-check:
 	@if [ "$(TARGET)" != "sw_emu" ]; then test -n "$(SDKTARGETSYSROOT)" || (echo "ERROR: SDKTARGETSYSROOT is not set. Run: source env_source.sh 24"; exit 1); fi
 	@if [ "$(TARGET)" != "sw_emu" ]; then test -f "$(ROOTFS)" || (echo "ERROR: ROOTFS not found: $(ROOTFS)"; exit 1); fi
 	@if [ "$(TARGET)" != "sw_emu" ]; then test -f "$(IMAGE)" || (echo "ERROR: IMAGE not found: $(IMAGE)"; exit 1); fi
+	@if [ "$(TARGET)" != "sw_emu" ]; then test -f scripts/run_hw_board.sh || (echo "ERROR: missing scripts/run_hw_board.sh. Re-sync the full repo folder before packaging."; exit 1); fi
 	@echo "VITIS_HOME=$(VITIS_HOME)"
 	@echo "BASE_PLATFORM=$(BASE_PLATFORM)"
 	@echo "TARGET=$(TARGET)"
@@ -107,6 +108,7 @@ else
 		--package.sd_file ../data \
 		$(KERNEL_NAME).$(TARGET).xsa
 	@if [ "$(TARGET)" = "hw_emu" ]; then test -f "$(PACKAGE_DIR)/launch_hw_emu.sh" || (echo "ERROR: missing $(PACKAGE_DIR)/launch_hw_emu.sh"; exit 1); fi
+	@if [ "$(TARGET)" != "sw_emu" ]; then test -f "$(PACKAGE_DIR)/sd_card/run_hw_board.sh" || (echo "ERROR: missing packaged run_hw_board.sh"; exit 1); fi
 	@if [ "$(TARGET)" = "hw" ]; then test -f "$(PACKAGE_DIR)/sd_card.img" || (echo "ERROR: missing $(PACKAGE_DIR)/sd_card.img"; exit 1); fi
 endif
 	touch $(PACKAGE_STAMP)
