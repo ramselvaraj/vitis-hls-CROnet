@@ -130,7 +130,7 @@ void print_usage(const char* argv0) {
 } // namespace
 
 int main(int argc, char** argv) {
-    const std::string vector_root = argc >= 2 ? argv[1] : "../layer_wise_weights/cronet_hls_fp16_vectors";
+    const std::string vector_root = argc >= 2 ? argv[1] : "data/cronet_hls_fp16_vectors";
     const std::string selected_case = argc >= 3 ? argv[2] : "all";
     const float abs_tol = argc >= 4 ? static_cast<float>(std::atof(argv[3])) : 2.0e-2f;
     const float rel_tol = argc >= 5 ? static_cast<float>(std::atof(argv[4])) : 2.0e-2f;

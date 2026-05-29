@@ -13,3 +13,4 @@ _x/
 package/
 reports/
 vitis_run/
+data/cronet_hls_fp16_vectors/

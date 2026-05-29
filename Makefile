@@ -2,7 +2,7 @@ CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -Iinclude
 VITIS_HLS ?= vitis_hls
 BUILD_DIR ?= build
-VECTORS ?= ../layer_wise_weights/cronet_hls_fp16_vectors
+VECTORS ?= data/cronet_hls_fp16_vectors
 
 FP32_TB := $(BUILD_DIR)/tb_fp32_layerwise
 FP16_STORAGE_TB := $(BUILD_DIR)/tb_fp16_storage_f32acc

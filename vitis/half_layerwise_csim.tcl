@@ -13,7 +13,7 @@ set repo_dir [file normalize [file join $script_dir ".."]]
 if {[info exists ::env(CRONET_VECTOR_ROOT)]} {
     set vector_root $::env(CRONET_VECTOR_ROOT)
 } else {
-    set vector_root [file normalize [file join $repo_dir ".." "layer_wise_weights" "cronet_hls_fp16_vectors"]]
+    set vector_root [file normalize [file join $repo_dir "data" "cronet_hls_fp16_vectors"]]
 }
 
 if {[info exists ::env(CRONET_CASE)]} {

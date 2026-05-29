@@ -5,10 +5,30 @@ Clean-room CRONet HLS implementation workspace for the 60x20 FP16 1:1 spec.
 This repository is intentionally separate from the old `archive/` implementation. The source of truth is the exported vector package:
 
 ```text
-../layer_wise_weights/cronet_hls_fp16_vectors
+data/cronet_hls_fp16_vectors
 ```
 
 The first checkpoints are native C++ layerwise models. They prove shapes, flattening order, indexing, layer formulas, and FP16 payload interpretation before moving into Vitis HLS.
+
+## Data setup
+
+The vector package must live at:
+
+```text
+data/cronet_hls_fp16_vectors
+```
+
+That folder is ignored by git on purpose. A GitHub clone will contain [data/README.md](data/README.md), but not the 102 MB binary vector package itself.
+
+Before running on the Vitis Linux machine, copy the ignored folder into the clone:
+
+```bash
+mkdir -p data
+cp -a /path/to/cronet_hls_fp16_vectors data/
+test -f data/cronet_hls_fp16_vectors/manifest.json
+```
+
+Expected check result: the `test` command prints nothing and exits with code `0`.
 
 ## Current checkpoints
 
@@ -16,7 +36,7 @@ Build and run the FP32 layerwise testbench from this directory:
 
 ```bash
 g++ -std=c++11 -O2 -Wall -Wextra -Iinclude src/cronet_fp32.cpp tests/tb_fp32_layerwise.cpp -o build/tb_fp32_layerwise
-./build/tb_fp32_layerwise ../layer_wise_weights/cronet_hls_fp16_vectors all
+./build/tb_fp32_layerwise data/cronet_hls_fp16_vectors all
 ```
 
 On Windows PowerShell with the local MinGW compiler:
@@ -24,7 +44,7 @@ On Windows PowerShell with the local MinGW compiler:
 ```powershell
 New-Item -ItemType Directory -Force build | Out-Null
 g++ -std=c++11 -O2 -Wall -Wextra -Iinclude src\cronet_fp32.cpp tests\tb_fp32_layerwise.cpp -o build\tb_fp32_layerwise.exe
-.\build\tb_fp32_layerwise.exe ..\layer_wise_weights\cronet_hls_fp16_vectors all
+.\build\tb_fp32_layerwise.exe data\cronet_hls_fp16_vectors all
 ```
 
 Expected final output:
@@ -41,14 +61,14 @@ Then run the FP16-storage / FP32-accumulation checkpoint:
 
 ```bash
 g++ -std=c++11 -O2 -Wall -Wextra -Iinclude src/cronet_fp32.cpp tests/tb_fp16_storage_f32acc.cpp -o build/tb_fp16_storage_f32acc
-./build/tb_fp16_storage_f32acc ../layer_wise_weights/cronet_hls_fp16_vectors all
+./build/tb_fp16_storage_f32acc data/cronet_hls_fp16_vectors all
 ```
 
 On Windows PowerShell:
 
 ```powershell
 g++ -std=c++11 -O2 -Wall -Wextra -Iinclude src\cronet_fp32.cpp tests\tb_fp16_storage_f32acc.cpp -o build\tb_fp16_storage_f32acc.exe
-.\build\tb_fp16_storage_f32acc.exe ..\layer_wise_weights\cronet_hls_fp16_vectors all
+.\build\tb_fp16_storage_f32acc.exe data\cronet_hls_fp16_vectors all
 ```
 
 Expected final output:
@@ -79,7 +99,7 @@ Vitis builds are not expected to run on this authoring machine. They should be r
 After FP16 storage is validated, generate the static weight header:
 
 ```bash
-python3 scripts/gen_fp16_weight_header.py ../layer_wise_weights/cronet_hls_fp16_vectors
+python3 scripts/gen_fp16_weight_header.py data/cronet_hls_fp16_vectors
 ```
 
 Expected output:
@@ -93,7 +113,7 @@ The generated arrays store raw IEEE binary16 payloads as `std::uint16_t`. The Vi
 Generate the direct HLS `half` ROM header used by the half debug checkpoint:
 
 ```bash
-python3 scripts/gen_fp16_half_header.py ../layer_wise_weights/cronet_hls_fp16_vectors
+python3 scripts/gen_fp16_half_header.py data/cronet_hls_fp16_vectors
 ```
 
 Expected output:
@@ -109,7 +129,7 @@ This checkpoint is meant for the Vitis machine. It uses `hls_half.h`, stores nam
 From the repository root on the Vitis machine:
 
 ```bash
-export CRONET_VECTOR_ROOT=../layer_wise_weights/cronet_hls_fp16_vectors
+export CRONET_VECTOR_ROOT=data/cronet_hls_fp16_vectors
 export CRONET_CASE=all
 export CRONET_ABS_TOL=2e-2
 export CRONET_REL_TOL=2e-2
@@ -130,7 +150,7 @@ On this authoring machine, the same file can be syntax-smoked with a float-backe
 
 ```powershell
 g++ -std=c++11 -O2 -Wall -Wextra -DCRONET_USE_NATIVE_FLOAT_HALF -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT -Iinclude tests\tb_half_layerwise.cpp -o build\tb_half_layerwise_native_stub.exe
-.\build\tb_half_layerwise_native_stub.exe ..\layer_wise_weights\cronet_hls_fp16_vectors all
+.\build\tb_half_layerwise_native_stub.exe data\cronet_hls_fp16_vectors all
 ```
 
 That smoke test does not prove real HLS half behavior; it only catches C++ integration mistakes before handoff.
