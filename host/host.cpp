@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <dirent.h>
 
 #include "xrt/xrt_bo.h"
 #include "xrt/xrt_device.h"
@@ -42,6 +43,48 @@ std::vector<T> load_bin(const std::string& path, std::size_t count) {
         throw std::runtime_error("short read from " + path);
     }
     return out;
+}
+
+bool ends_with(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string find_default_xclbin() {
+    const char* candidates[] = {
+        "a.xclbin",
+        "binary_container_1.xclbin",
+        "cronet_kernel.sw_emu.xclbin",
+        "cronet_kernel.hw_emu.xclbin",
+        "cronet_kernel.hw.xclbin"
+    };
+
+    for (const char* candidate : candidates) {
+        std::ifstream f(candidate, std::ios::binary);
+        if (f) {
+            return candidate;
+        }
+    }
+
+    DIR* dir = opendir(".");
+    if (!dir) {
+        throw std::runtime_error("failed to scan current directory for .xclbin");
+    }
+
+    std::string found;
+    while (dirent* ent = readdir(dir)) {
+        const std::string name = ent->d_name;
+        if (ends_with(name, ".xclbin")) {
+            found = name;
+            break;
+        }
+    }
+    closedir(dir);
+
+    if (found.empty()) {
+        throw std::runtime_error("no .xclbin argument provided and no .xclbin found in current directory");
+    }
+    return found;
 }
 
 float fp16_bits_to_float(std::uint16_t bits) {
@@ -114,28 +157,30 @@ bool compare_output(
 void usage(const char* argv0) {
     std::cerr << "Usage: " << argv0
               << " <xclbin> [vector_root=data/cronet_hls_fp16_vectors] [case=sanity] [abs_tol=2e-2] [rel_tol=2e-2]\n";
+    std::cerr << "       " << argv0
+              << "    # auto-detects .xclbin in current directory, useful for packaged hw_emu\n";
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 6) {
+    if (argc > 6) {
         usage(argv[0]);
         return 2;
     }
 
-    const std::string xclbin_path = argv[1];
     const std::string vector_root = argc >= 3 ? argv[2] : "data/cronet_hls_fp16_vectors";
     const std::string case_name = argc >= 4 ? argv[3] : "sanity";
     const float abs_tol = argc >= 5 ? std::stof(argv[4]) : 2.0e-2f;
     const float rel_tol = argc >= 6 ? std::stof(argv[5]) : 2.0e-2f;
 
-    const std::string case_root = path_join(path_join(vector_root, "cases"), case_name);
-    const std::string input_root = path_join(case_root, "inputs/fp16_words");
-    const std::string golden_root = path_join(case_root, "golden/fp16_torch_f32");
-
     try {
-        std::cout << "CRONet sw_emu host\n";
+        const std::string xclbin_path = argc >= 2 ? argv[1] : find_default_xclbin();
+        const std::string case_root = path_join(path_join(vector_root, "cases"), case_name);
+        const std::string input_root = path_join(case_root, "inputs/fp16_words");
+        const std::string golden_root = path_join(case_root, "golden/fp16_torch_f32");
+
+        std::cout << "CRONet XRT host\n";
         std::cout << "xclbin: " << xclbin_path << "\n";
         std::cout << "vector_root: " << vector_root << "\n";
         std::cout << "case: " << case_name << "\n";
@@ -178,7 +223,7 @@ int main(int argc, char** argv) {
                   << " output[1]=" << fp16_bits_to_float(output_words[1]) << "\n";
 
         const bool ok = compare_output(output_words, golden, abs_tol, rel_tol);
-        std::cout << (ok ? "CRONET SW_EMU TEST PASS" : "CRONET SW_EMU TEST FAIL") << "\n";
+        std::cout << (ok ? "CRONET XRT TEST PASS" : "CRONET XRT TEST FAIL") << "\n";
         return ok ? 0 : 1;
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << "\n";

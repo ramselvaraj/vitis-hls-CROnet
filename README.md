@@ -195,12 +195,12 @@ BASE_PLATFORM=...
 TARGET=sw_emu
 VECTORS=data/cronet_hls_fp16_vectors
 ...
-CRONet sw_emu host
+CRONet XRT host
 case: sanity
 Launching cronet_kernel...
 Kernel completed.
 compare final_output: PASS ...
-CRONET SW_EMU TEST PASS
+CRONET XRT TEST PASS
 ```
 
 After `sanity` passes, run the other cases one at a time:
@@ -211,4 +211,72 @@ make vitis-sw-emu CASE=sparse
 make vitis-sw-emu CASE=random
 ```
 
+Or run all four cases:
+
+```bash
+make vitis-sw-emu-all
+```
+
 The first `sw_emu` build may be slow because Vitis has to compile and link the kernel. Re-running a different case should reuse the built xclbin unless sources changed.
+
+## First Vitis hw_emu Check
+
+After all `sw_emu` cases pass, build and package `hw_emu`:
+
+```bash
+cd ~/vitis-hls-CROnet
+source env_source.sh 24
+make vitis-hw-emu-build
+```
+
+Expected high-level flow:
+
+```text
+v++ -c -t hw_emu ...
+v++ -l -t hw_emu ... -o build/cronet_kernel.hw_emu.xsa
+v++ -p -t hw_emu ... --package.sd_file host.exe --package.sd_file ../data ...
+```
+
+This creates:
+
+```text
+build/package.hw_emu/launch_hw_emu.sh
+build/package.hw_emu/sd_card.img
+```
+
+Then launch the emulator and run the packaged host:
+
+```bash
+make vitis-hw-emu-run
+```
+
+Expected host ending:
+
+```text
+CRONet XRT host
+case: sanity
+Launching cronet_kernel...
+Kernel completed.
+compare final_output: PASS ...
+CRONET XRT TEST PASS
+```
+
+`hw_emu` is much slower than `sw_emu`; start with the default `sanity` case only.
+
+## First Vitis hw Package
+
+After `hw_emu` passes, build the hardware package:
+
+```bash
+cd ~/vitis-hls-CROnet
+source env_source.sh 24
+make vitis-hw-build
+```
+
+Expected package artifact:
+
+```text
+build/package.hw/sd_card.img
+```
+
+This target builds the image only. Booting/running on the board is the next handoff step.
