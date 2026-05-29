@@ -30,6 +30,23 @@ test -f data/cronet_hls_fp16_vectors/manifest.json
 
 Expected check result: the `test` command prints nothing and exits with code `0`.
 
+## Vitis environment
+
+On the Vitis Linux machine, source the 2024.1 VEK280 environment before running HLS:
+
+```bash
+source env_source.sh advent_rigel_2024_1
+```
+
+Short aliases also work:
+
+```bash
+source env_source.sh 24
+source env_source.sh vitis_2024_1
+```
+
+Expected output includes paths for `vitis_hls`, `vitis`, `v++`, and `vivado`. If one of those prints nothing, the corresponding tool was not found in the sourced environment.
+
 ## Current checkpoints
 
 Build and run the FP32 layerwise testbench from this directory:
