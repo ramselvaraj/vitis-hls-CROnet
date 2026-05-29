@@ -103,6 +103,7 @@ else
 		--package.kernel_image=$(IMAGE) \
 		--package.out_dir package.$(TARGET) \
 		--package.sd_file host.exe \
+		--package.sd_file ../scripts/run_hw_board.sh \
 		--package.sd_file ../data \
 		$(KERNEL_NAME).$(TARGET).xsa
 	@if [ "$(TARGET)" = "hw_emu" ]; then test -f "$(PACKAGE_DIR)/launch_hw_emu.sh" || (echo "ERROR: missing $(PACKAGE_DIR)/launch_hw_emu.sh"; exit 1); fi
@@ -140,7 +141,7 @@ vitis-hw-emu-build:
 	$(MAKE) TARGET=hw_emu vitis-package
 
 vitis-hw-emu-run: vitis-hw-emu-build
-	cd $(BUILD_DIR)/package.hw_emu && ./launch_hw_emu.sh -run-app ./host.exe
+	cd $(BUILD_DIR)/package.hw_emu && ./launch_hw_emu.sh -run-app ./run_hw_board.sh
 
 vitis-hw-build:
 	$(MAKE) TARGET=hw vitis-package

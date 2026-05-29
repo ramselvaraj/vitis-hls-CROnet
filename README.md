@@ -234,7 +234,7 @@ Expected high-level flow:
 ```text
 v++ -c -t hw_emu ...
 v++ -l -t hw_emu ... -o build/cronet_kernel.hw_emu.xsa
-v++ -p -t hw_emu ... --package.sd_file host.exe --package.sd_file ../data ...
+v++ -p -t hw_emu ... --package.sd_file host.exe --package.sd_file ../scripts/run_hw_board.sh --package.sd_file ../data ...
 ```
 
 This creates:
@@ -263,6 +263,13 @@ CRONET XRT TEST PASS
 
 `hw_emu` is much slower than `sw_emu`; start with the default `sanity` case only.
 
+To run a specific case manually inside the packaged emulation directory:
+
+```bash
+cd build/package.hw_emu
+./launch_hw_emu.sh -run-app "./run_hw_board.sh sanity"
+```
+
 ## First Vitis hw Package
 
 After `hw_emu` passes, build the hardware package:
@@ -280,3 +287,29 @@ build/package.hw/sd_card.img
 ```
 
 This target builds the image only. Booting/running on the board is the next handoff step.
+
+After booting the VEK280 from the generated SD image, run on the board:
+
+```bash
+cd /run/media/mmcblk0p1
+./run_hw_board.sh sanity
+```
+
+Expected board-side ending:
+
+```text
+CRONet XRT host
+case: sanity
+Launching cronet_kernel...
+Kernel completed.
+compare final_output: PASS ...
+CRONET XRT TEST PASS
+```
+
+The script also accepts the same case names:
+
+```bash
+./run_hw_board.sh ramp
+./run_hw_board.sh sparse
+./run_hw_board.sh random
+```
