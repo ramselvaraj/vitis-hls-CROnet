@@ -15,7 +15,9 @@ BASE_PLATFORM ?= $(VITIS_HOME)/base_platforms/$(PLATFORM_USE)/$(PLATFORM_USE).xp
 
 KERNEL_NAME := cronet_kernel
 KERNEL_XO := $(BUILD_DIR)/$(KERNEL_NAME).$(TARGET).xo
-XCLBIN := $(BUILD_DIR)/$(KERNEL_NAME).$(TARGET).xclbin
+KERNEL_XSA := $(BUILD_DIR)/$(KERNEL_NAME).$(TARGET).xsa
+PACKAGE_DIR := $(BUILD_DIR)/package.$(TARGET)
+PACKAGE_XCLBIN := $(BUILD_DIR)/a.xclbin
 HOST_EXE_SW := $(BUILD_DIR)/host_ps_on_x86
 HOST_EXE_HW := $(BUILD_DIR)/host.exe
 HOST_EXE := $(if $(filter $(TARGET),sw_emu),$(HOST_EXE_SW),$(HOST_EXE_HW))
@@ -25,7 +27,7 @@ FP32_TB := $(BUILD_DIR)/tb_fp32_layerwise
 FP16_STORAGE_TB := $(BUILD_DIR)/tb_fp16_storage_f32acc
 
 .PHONY: all fp32-test fp16-storage-test half-native-smoke vitis-half-csim \
-        vitis-check vitis-kernel vitis-xclbin vitis-host vitis-sw-emu vitis-clean clean
+        vitis-check vitis-kernel vitis-xsa vitis-package vitis-host vitis-sw-emu vitis-clean clean
 
 all: $(FP32_TB) $(FP16_STORAGE_TB)
 
@@ -68,11 +70,21 @@ $(KERNEL_XO): src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_hal
 	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) --save-temps -g \
 		-Iinclude -k $(KERNEL_NAME) src/cronet_kernel.cpp -o $(KERNEL_XO)
 
-vitis-xclbin: $(XCLBIN)
+vitis-xsa: $(KERNEL_XSA)
 
-$(XCLBIN): $(KERNEL_XO) $(VITIS_CFG)
+$(KERNEL_XSA): $(KERNEL_XO) $(VITIS_CFG)
 	$(VPP) -l -t $(TARGET) --platform $(BASE_PLATFORM) --save-temps -g \
-		--config $(VITIS_CFG) $(KERNEL_XO) -o $(XCLBIN)
+		--config $(VITIS_CFG) $(KERNEL_XO) -o $(KERNEL_XSA)
+
+vitis-package: $(PACKAGE_XCLBIN)
+
+$(PACKAGE_XCLBIN): $(KERNEL_XSA)
+	cd $(BUILD_DIR) && emconfigutil --platform $(BASE_PLATFORM) --nd 1
+	cd $(BUILD_DIR) && $(VPP) -p -t $(TARGET) --platform $(BASE_PLATFORM) \
+		--package.out_dir package.$(TARGET) \
+		$(KERNEL_NAME).$(TARGET).xsa
+	@if [ ! -f "$(PACKAGE_XCLBIN)" ] && [ -f "$(PACKAGE_DIR)/a.xclbin" ]; then cp "$(PACKAGE_DIR)/a.xclbin" "$(PACKAGE_XCLBIN)"; fi
+	@test -f $(PACKAGE_XCLBIN) || (echo "ERROR: expected package output not found: $(PACKAGE_XCLBIN)"; exit 1)
 
 ifeq ($(TARGET),sw_emu)
 vitis-host: $(HOST_EXE_SW)
@@ -91,12 +103,12 @@ $(HOST_EXE_HW): host/host.cpp | $(BUILD_DIR)
 endif
 
 vitis-sw-emu: TARGET=sw_emu
-vitis-sw-emu: vitis-xclbin vitis-host
-	cd $(BUILD_DIR) && emconfigutil --platform $(BASE_PLATFORM) --nd 1
-	cd $(BUILD_DIR) && XCL_EMULATION_MODE=sw_emu ./host_ps_on_x86 $(KERNEL_NAME).sw_emu.xclbin ../$(VECTORS) $(CASE) $(ABS_TOL) $(REL_TOL)
+vitis-sw-emu: vitis-package vitis-host
+	cd $(BUILD_DIR) && XCL_EMULATION_MODE=sw_emu ./host_ps_on_x86 a.xclbin ../$(VECTORS) $(CASE) $(ABS_TOL) $(REL_TOL)
 
 vitis-clean:
 	rm -rf $(BUILD_DIR)/$(KERNEL_NAME).* $(BUILD_DIR)/host_ps_on_x86 $(BUILD_DIR)/host.exe
+	rm -rf $(BUILD_DIR)/a.xclbin $(BUILD_DIR)/emconfig.json $(PACKAGE_DIR)
 	rm -rf _x .Xil *.log *.jou *.str vitis_hls.log
 
 clean:
