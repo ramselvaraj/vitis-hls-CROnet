@@ -41,10 +41,26 @@ if {[info exists ::env(CRONET_PART)]} {
 }
 
 open_project -reset [file join $repo_dir "build" "vitis_half_layerwise_csim"]
-set_top run_cronet_half_debug
 
-add_files [file join $repo_dir "src" "cronet_half_debug.cpp"] -cflags "-I[file join $repo_dir include]"
-add_files -tb [file join $repo_dir "tests" "tb_half_layerwise.cpp"] -cflags "-I[file join $repo_dir include]"
+set src_file [file join $repo_dir "src" "cronet_half_debug.cpp"]
+set tb_file [file join $repo_dir "tests" "tb_half_layerwise.cpp"]
+set include_dir [file join $repo_dir "include"]
+set cflags "-std=c++11 -I$include_dir"
+
+if {![file exists $src_file]} {
+    error "Missing design source: $src_file"
+}
+if {![file exists $tb_file]} {
+    error "Missing testbench source: $tb_file"
+}
+
+set_top "cronet::run_cronet_half_debug"
+
+# Keep options before file paths. Some Vitis HLS versions do not reliably
+# parse file-first add_files commands and can then omit the design object
+# from csim linking.
+add_files -cflags $cflags $src_file
+add_files -tb -cflags $cflags $tb_file
 
 open_solution -reset "solution1" -flow_target vitis
 set_part $part_name
