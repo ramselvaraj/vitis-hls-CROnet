@@ -1,0 +1,15 @@
+build/
+*.exe
+*.o
+*.obj
+*.log
+*.jou
+*.str
+*.xclbin
+*.xo
+*.xsa
+_x/
+.Xil/
+package/
+reports/
+vitis_run/
