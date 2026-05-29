@@ -171,3 +171,44 @@ g++ -std=c++11 -O2 -Wall -Wextra -DCRONET_USE_NATIVE_FLOAT_HALF -DCRONET_HALF_DE
 ```
 
 That smoke test does not prove real HLS half behavior; it only catches C++ integration mistakes before handoff.
+
+## First Vitis sw_emu Kernel Check
+
+The first Vitis kernel wrapper is correctness-first. It uses AXI memory ports for branch input, trunk input, and final output. Weights are compiled into the kernel through generated FP16 ROM headers.
+
+On the Vitis Linux machine:
+
+```bash
+cd ~/vitis-hls-CROnet
+source env_source.sh 24
+test -f data/cronet_hls_fp16_vectors/manifest.json && echo "vectors ready"
+make vitis-check
+make vitis-sw-emu CASE=sanity
+```
+
+Expected high-level output:
+
+```text
+vectors ready
+VITIS_HOME=...
+BASE_PLATFORM=...
+TARGET=sw_emu
+VECTORS=data/cronet_hls_fp16_vectors
+...
+CRONet sw_emu host
+case: sanity
+Launching cronet_kernel...
+Kernel completed.
+compare final_output: PASS ...
+CRONET SW_EMU TEST PASS
+```
+
+After `sanity` passes, run the other cases one at a time:
+
+```bash
+make vitis-sw-emu CASE=ramp
+make vitis-sw-emu CASE=sparse
+make vitis-sw-emu CASE=random
+```
+
+The first `sw_emu` build may be slow because Vitis has to compile and link the kernel. Re-running a different case should reuse the built xclbin unless sources changed.
