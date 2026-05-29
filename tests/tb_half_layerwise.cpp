@@ -6,6 +6,10 @@
 #include "bin_io.hpp"
 #include "cronet_half_debug.hpp"
 
+#if defined(CRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT)
+#include "../src/cronet_half_debug.cpp"
+#endif
+
 namespace {
 
 struct TensorCheck {

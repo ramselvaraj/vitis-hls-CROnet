@@ -129,7 +129,7 @@ ALL HLS HALF LAYERWISE TESTS PASS
 On this authoring machine, the same file can be syntax-smoked with a float-backed stub:
 
 ```powershell
-g++ -std=c++11 -O2 -Wall -Wextra -DCRONET_USE_NATIVE_FLOAT_HALF -Iinclude src\cronet_half_debug.cpp tests\tb_half_layerwise.cpp -o build\tb_half_layerwise_native_stub.exe
+g++ -std=c++11 -O2 -Wall -Wextra -DCRONET_USE_NATIVE_FLOAT_HALF -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT -Iinclude tests\tb_half_layerwise.cpp -o build\tb_half_layerwise_native_stub.exe
 .\build\tb_half_layerwise_native_stub.exe ..\layer_wise_weights\cronet_hls_fp16_vectors all
 ```
 

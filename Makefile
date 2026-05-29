@@ -27,7 +27,7 @@ fp16-storage-test: $(FP16_STORAGE_TB)
 	$(FP16_STORAGE_TB) $(VECTORS) all
 
 half-native-smoke: src/cronet_half_debug.cpp tests/tb_half_layerwise.cpp include/cronet_half_debug.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -DCRONET_USE_NATIVE_FLOAT_HALF src/cronet_half_debug.cpp tests/tb_half_layerwise.cpp -o $(BUILD_DIR)/tb_half_layerwise_native_stub
+	$(CXX) $(CXXFLAGS) -DCRONET_USE_NATIVE_FLOAT_HALF -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT tests/tb_half_layerwise.cpp -o $(BUILD_DIR)/tb_half_layerwise_native_stub
 	$(BUILD_DIR)/tb_half_layerwise_native_stub $(VECTORS) all
 
 vitis-half-csim:

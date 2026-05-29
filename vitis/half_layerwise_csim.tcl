@@ -42,25 +42,27 @@ if {[info exists ::env(CRONET_PART)]} {
 
 open_project -reset [file join $repo_dir "build" "vitis_half_layerwise_csim"]
 
-set src_file [file join $repo_dir "src" "cronet_half_debug.cpp"]
+set dummy_file [file join $repo_dir "vitis" "half_layerwise_csim_dummy.cpp"]
 set tb_file [file join $repo_dir "tests" "tb_half_layerwise.cpp"]
 set include_dir [file join $repo_dir "include"]
 set cflags "-std=c++11 -I$include_dir"
+set tb_cflags "$cflags -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT"
 
-if {![file exists $src_file]} {
-    error "Missing design source: $src_file"
+if {![file exists $dummy_file]} {
+    error "Missing dummy design source: $dummy_file"
 }
 if {![file exists $tb_file]} {
     error "Missing testbench source: $tb_file"
 }
 
-set_top "cronet::run_cronet_half_debug"
+set_top "cronet_half_layerwise_csim_dummy"
 
-# Keep options before file paths. Some Vitis HLS versions do not reliably
-# parse file-first add_files commands and can then omit the design object
-# from csim linking.
-add_files -cflags $cflags $src_file
-add_files -tb -cflags $cflags $tb_file
+# Vitis HLS 2024.1 was adding src/cronet_half_debug.cpp to the project but
+# not linking it into csim.exe for this std::vector debug checkpoint. Keep the
+# design source as a tiny dummy top and compile the debug implementation through
+# the testbench with CRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT.
+add_files -cflags $cflags $dummy_file
+add_files -tb -cflags $tb_cflags $tb_file
 
 open_solution -reset "solution1" -flow_target vitis
 set_part $part_name
