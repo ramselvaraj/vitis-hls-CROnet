@@ -61,6 +61,7 @@ copy_if_exists "_x/reports/link/imp/impl_1_route_report_timing_summary_0.rpt" "$
 copy_if_exists "_x/reports/link/imp/impl_1_kernel_util_routed.rpt" "$handoff_dir/reports"
 copy_if_exists "_x/reports/link/imp/impl_1_full_util_routed.rpt" "$handoff_dir/reports"
 copy_if_exists "docs/CRONet_HLS_Steps_4_6_AIE_Alignment.pdf" "$handoff_dir/docs"
+copy_if_exists "docs/CRONet_HLS_HW_Utilization_Timing_Summary.md" "$handoff_dir/docs"
 
 cat > "$handoff_dir/README_BOARD_RUN.md" <<'EOF'
 # CRONet VEK280 Hardware Handoff
