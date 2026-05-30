@@ -32,7 +32,7 @@ FP16_STORAGE_TB := $(BUILD_DIR)/tb_fp16_storage_f32acc
 .PHONY: all fp32-test fp16-storage-test half-native-smoke vitis-half-csim \
         vitis-check vitis-kernel vitis-xsa vitis-package vitis-host \
         vitis-sw-emu vitis-sw-emu-all vitis-hw-emu-build vitis-hw-emu-run vitis-hw-build \
-        vitis-clean clean
+        board-handoff vitis-clean clean
 
 all: $(FP32_TB) $(FP16_STORAGE_TB)
 
@@ -97,6 +97,7 @@ ifeq ($(TARGET),sw_emu)
 	@if [ ! -f "$(PACKAGE_XCLBIN)" ] && [ -f "$(PACKAGE_DIR)/a.xclbin" ]; then cp "$(PACKAGE_DIR)/a.xclbin" "$(PACKAGE_XCLBIN)"; fi
 	@test -f $(PACKAGE_XCLBIN) || (echo "ERROR: expected package output not found: $(PACKAGE_XCLBIN)"; exit 1)
 else
+	chmod +x scripts/run_hw_board.sh
 	cd $(BUILD_DIR) && $(VPP) -p -t $(TARGET) --platform $(BASE_PLATFORM) \
 		--package.rootfs=$(ROOTFS) \
 		--package.image_format=ext4 \
@@ -147,6 +148,9 @@ vitis-hw-emu-run: vitis-hw-emu-build
 
 vitis-hw-build:
 	$(MAKE) TARGET=hw vitis-package
+
+board-handoff:
+	bash scripts/prepare_board_handoff.sh
 
 vitis-clean:
 	rm -rf $(BUILD_DIR)/$(KERNEL_NAME).* $(BUILD_DIR)/host_ps_on_x86 $(BUILD_DIR)/host.exe
