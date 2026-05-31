@@ -39,6 +39,50 @@ copy_if_exists() {
     fi
 }
 
+copy_slim_vector_data() {
+    local src_vectors="$sd_dir/data/cronet_hls_fp16_vectors"
+    local dst_data="$handoff_dir/sd_card/data"
+    local dst_vectors="$dst_data/cronet_hls_fp16_vectors"
+    local case_count=0
+
+    require_file "$src_vectors/manifest.json"
+
+    rm -rf "$dst_data"
+    mkdir -p "$dst_vectors/cases"
+    cp -a "$src_vectors/manifest.json" "$dst_vectors/manifest.json"
+    copy_if_exists "$sd_dir/data/README.md" "$dst_data"
+
+    for case_dir in "$src_vectors"/cases/*; do
+        [ -d "$case_dir" ] || continue
+
+        local case_name
+        case_name=$(basename "$case_dir")
+
+        local branch_bin="$case_dir/inputs/fp16_words/branch_input.bin"
+        local trunk_bin="$case_dir/inputs/fp16_words/trunk_input.bin"
+        local golden_bin="$case_dir/golden/fp16_torch_f32/final_output.bin"
+
+        if [ ! -f "$branch_bin" ] || [ ! -f "$trunk_bin" ] || [ ! -f "$golden_bin" ]; then
+            echo "WARNING: skipping incomplete case '$case_name'"
+            continue
+        fi
+
+        mkdir -p "$dst_vectors/cases/$case_name/inputs/fp16_words"
+        mkdir -p "$dst_vectors/cases/$case_name/golden/fp16_torch_f32"
+        cp -a "$branch_bin" "$dst_vectors/cases/$case_name/inputs/fp16_words/branch_input.bin"
+        cp -a "$trunk_bin" "$dst_vectors/cases/$case_name/inputs/fp16_words/trunk_input.bin"
+        cp -a "$golden_bin" "$dst_vectors/cases/$case_name/golden/fp16_torch_f32/final_output.bin"
+        case_count=$((case_count + 1))
+    done
+
+    if [ "$case_count" -eq 0 ]; then
+        echo "ERROR: no runnable cases found under $src_vectors/cases"
+        exit 1
+    fi
+
+    echo "$case_count" > "$dst_vectors/BOARD_CASE_COUNT.txt"
+}
+
 require_file "$sd_img"
 require_dir "$sd_dir"
 require_file "$sd_dir/a.xclbin"
@@ -52,6 +96,7 @@ mkdir -p "$handoff_dir/reports" "$handoff_dir/docs"
 cp -a "$sd_img" "$handoff_dir/sd_card.img"
 cp -a "$sd_dir" "$handoff_dir/sd_card"
 chmod +x "$handoff_dir/sd_card/host.exe" "$handoff_dir/sd_card/run_hw_board.sh" 2>/dev/null || true
+copy_slim_vector_data
 
 copy_if_exists "build/cronet_kernel.hw.xo.compile_summary" "$handoff_dir/reports"
 copy_if_exists "build/cronet_kernel.hw.xsa.link_summary" "$handoff_dir/reports"
@@ -76,7 +121,8 @@ Versal VEK280 board.
 - `sd_card/a.xclbin`: CRONet FPGA binary.
 - `sd_card/host.exe`: AArch64 XRT host executable.
 - `sd_card/run_hw_board.sh`: convenience runner for sanity/ramp/sparse/random cases.
-- `sd_card/data/cronet_hls_fp16_vectors`: input vectors and golden outputs.
+- `sd_card/data/cronet_hls_fp16_vectors`: slim board data package containing
+  only `manifest.json`, input FP16-word bins, and final-output golden bins.
 - `reports/`: selected timing, utilization, HLS, compile, and link reports.
 
 ## Option A: Flash the SD-card image
@@ -100,6 +146,16 @@ Boot the VEK280 from the SD card.
 
 If the board already runs a compatible VEK280 Linux/XRT image, copy the contents
 of `sd_card/` to a directory on the board, then run from that directory.
+
+The unpacked `sd_card/` folder in this handoff is intentionally slimmed for
+board execution. It keeps only the files read by `host.exe`:
+
+```text
+data/cronet_hls_fp16_vectors/manifest.json
+data/cronet_hls_fp16_vectors/cases/<case>/inputs/fp16_words/branch_input.bin
+data/cronet_hls_fp16_vectors/cases/<case>/inputs/fp16_words/trunk_input.bin
+data/cronet_hls_fp16_vectors/cases/<case>/golden/fp16_torch_f32/final_output.bin
+```
 
 ## Run commands on the VEK280
 
@@ -182,7 +238,7 @@ EOF
     echo "  $sd_dir"
 } > "$handoff_dir/BUILD_INFO.txt"
 
-find "$handoff_dir" -maxdepth 4 -type f | sort > "$handoff_dir/FILE_LIST.txt"
+find "$handoff_dir" -type f | sort > "$handoff_dir/FILE_LIST.txt"
 
 (
     cd "$handoff_dir"
@@ -192,6 +248,9 @@ find "$handoff_dir" -maxdepth 4 -type f | sort > "$handoff_dir/FILE_LIST.txt"
         sha256sum sd_card/host.exe
         sha256sum sd_card/run_hw_board.sh
         sha256sum sd_card/data/cronet_hls_fp16_vectors/manifest.json
+        find sd_card/data/cronet_hls_fp16_vectors/cases -type f -name '*.bin' | sort | while read -r f; do
+            sha256sum "$f"
+        done
     } > SHA256SUMS.txt
 )
 
