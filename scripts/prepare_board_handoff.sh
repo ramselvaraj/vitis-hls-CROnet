@@ -115,12 +115,22 @@ Typical path:
 cd /run/media/mmcblk0p1
 ```
 
-Run one case:
+Run one case with the default single inference:
 
 ```bash
 chmod +x host.exe run_hw_board.sh 2>/dev/null || true
 sh ./run_hw_board.sh sanity
 ```
+
+Run one case for multiple timed inference iterations:
+
+```bash
+sh ./run_hw_board.sh sanity 2e-2 2e-2 100
+```
+
+The fourth argument is `n_iter`. The host prints total and average timing for
+host-to-device sync, kernel execution, device-to-host sync, and the combined
+input-to-output path.
 
 Run all exported cases:
 
@@ -141,6 +151,9 @@ case: <case-name>
 Launching cronet_kernel...
 Kernel completed.
 compare final_output: PASS ...
+timing_iterations <n_iter>
+timing_ms kernel_run         total ... avg ...
+timing_ms inference_io       total ... avg ...
 CRONET XRT TEST PASS
 ```
 

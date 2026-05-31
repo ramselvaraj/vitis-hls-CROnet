@@ -295,6 +295,16 @@ cd /run/media/mmcblk0p1
 ./run_hw_board.sh sanity
 ```
 
+The board runner accepts optional tolerances and an iteration count:
+
+```bash
+./run_hw_board.sh sanity 2e-2 2e-2 100
+```
+
+The fourth argument runs the same input case for `n_iter` kernel launches and
+prints total/average timing for host-to-device sync, kernel execution,
+device-to-host sync, and the combined input-to-output path.
+
 Expected board-side ending:
 
 ```text
@@ -303,6 +313,9 @@ case: sanity
 Launching cronet_kernel...
 Kernel completed.
 compare final_output: PASS ...
+timing_iterations ...
+timing_ms kernel_run ...
+timing_ms inference_io ...
 CRONET XRT TEST PASS
 ```
 

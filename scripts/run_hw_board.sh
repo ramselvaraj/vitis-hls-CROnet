@@ -5,6 +5,7 @@ set -eu
 case_name="${1:-sanity}"
 abs_tol="${2:-2e-2}"
 rel_tol="${3:-2e-2}"
+n_iter="${4:-1}"
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
@@ -48,5 +49,6 @@ echo "  xclbin: $xclbin"
 echo "  case:   $case_name"
 echo "  abs:    $abs_tol"
 echo "  rel:    $rel_tol"
+echo "  iter:   $n_iter"
 
-./host.exe "$xclbin" "$vectors" "$case_name" "$abs_tol" "$rel_tol"
+./host.exe "$xclbin" "$vectors" "$case_name" "$abs_tol" "$rel_tol" "$n_iter"
