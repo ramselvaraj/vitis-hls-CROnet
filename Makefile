@@ -1,5 +1,7 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -Iinclude
+NATIVE_CXX ?= g++
+NATIVE_CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -Iinclude -DCRONET_USE_NATIVE_FLOAT_HALF
 VITIS_HLS ?= vitis_hls
 VPP ?= v++
 BUILD_DIR ?= build
@@ -8,6 +10,13 @@ TARGET ?= sw_emu
 CASE ?= sanity
 ABS_TOL ?= 2e-2
 REL_TOL ?= 2e-2
+ifeq ($(TARGET),hw)
+KERNEL_FREQ ?= 250000000
+else
+KERNEL_FREQ ?=
+endif
+VPP_COMPILE_FREQ_FLAGS = $(if $(KERNEL_FREQ),--freqhz=$(KERNEL_FREQ),)
+VPP_LINK_FREQ_FLAGS = $(if $(KERNEL_FREQ),--freqhz=$(KERNEL_FREQ):$(KERNEL_CU),)
 
 VITIS_HOME ?= $(shell dirname "$$(dirname "$$(which vitis 2>/dev/null)")" 2>/dev/null)
 PLATFORM_USE ?= xilinx_vek280_base_202410_1
@@ -16,6 +25,7 @@ ROOTFS ?= $(XILINX_VERSAL)/rootfs.ext4
 IMAGE ?= $(XILINX_VERSAL)/Image
 
 KERNEL_NAME := cronet_kernel
+KERNEL_CU ?= $(KERNEL_NAME)_1
 KERNEL_XO := $(BUILD_DIR)/$(KERNEL_NAME).$(TARGET).xo
 KERNEL_XSA := $(BUILD_DIR)/$(KERNEL_NAME).$(TARGET).xsa
 PACKAGE_DIR := $(BUILD_DIR)/package.$(TARGET)
@@ -29,9 +39,9 @@ VITIS_CFG := vitis/system.cfg
 FP32_TB := $(BUILD_DIR)/tb_fp32_layerwise
 FP16_STORAGE_TB := $(BUILD_DIR)/tb_fp16_storage_f32acc
 
-.PHONY: all fp32-test fp16-storage-test half-native-smoke vitis-half-csim \
+.PHONY: all fp32-test fp16-storage-test half-native-smoke kernel-native-smoke kernel-native-test vitis-half-csim \
         vitis-check vitis-kernel vitis-xsa vitis-package vitis-host \
-        vitis-sw-emu vitis-sw-emu-all vitis-hw-emu-build vitis-hw-emu-run vitis-hw-build \
+        vitis-sw-emu vitis-sw-emu-all vitis-hw-emu-build vitis-hw-emu-run vitis-hw-build vitis-hw-preflight \
         board-handoff vitis-clean clean
 
 all: $(FP32_TB) $(FP16_STORAGE_TB)
@@ -52,8 +62,15 @@ fp16-storage-test: $(FP16_STORAGE_TB)
 	$(FP16_STORAGE_TB) $(VECTORS) all
 
 half-native-smoke: src/cronet_half_debug.cpp tests/tb_half_layerwise.cpp include/cronet_half_debug.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -DCRONET_USE_NATIVE_FLOAT_HALF -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT tests/tb_half_layerwise.cpp -o $(BUILD_DIR)/tb_half_layerwise_native_stub
+	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT tests/tb_half_layerwise.cpp -o $(BUILD_DIR)/tb_half_layerwise_native_stub
 	$(BUILD_DIR)/tb_half_layerwise_native_stub $(VECTORS) all
+
+kernel-native-smoke: src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
+	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) -c src/cronet_kernel.cpp -o $(BUILD_DIR)/cronet_kernel_native_stub.o
+
+kernel-native-test: src/cronet_kernel.cpp tests/tb_kernel_native.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp include/bin_io.hpp | $(BUILD_DIR)
+	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) tests/tb_kernel_native.cpp src/cronet_kernel.cpp -o $(BUILD_DIR)/tb_kernel_native
+	$(BUILD_DIR)/tb_kernel_native $(VECTORS) all
 
 vitis-half-csim:
 	CRONET_VECTOR_ROOT=$(VECTORS) $(VITIS_HLS) -f vitis/half_layerwise_csim.tcl
@@ -70,19 +87,28 @@ vitis-check:
 	@echo "VITIS_HOME=$(VITIS_HOME)"
 	@echo "BASE_PLATFORM=$(BASE_PLATFORM)"
 	@echo "TARGET=$(TARGET)"
+	@if [ -n "$(KERNEL_FREQ)" ]; then echo "KERNEL_FREQ=$(KERNEL_FREQ)"; fi
+	@if [ -n "$(KERNEL_FREQ)" ]; then echo "KERNEL_CU=$(KERNEL_CU)"; fi
 	@echo "VECTORS=$(VECTORS)"
+
+vitis-hw-preflight:
+	$(MAKE) vitis-check TARGET=hw
+	@echo "compile clock flag: $(VPP_COMPILE_FREQ_FLAGS)"
+	@echo "link clock flag:    $(VPP_LINK_FREQ_FLAGS)"
+	$(VPP) -l -t hw --platform $(BASE_PLATFORM) $(VPP_LINK_FREQ_FLAGS) --config $(VITIS_CFG) --list_steps >/dev/null
+	@echo "Vitis hw link option parser accepted the clock/config syntax."
 
 vitis-kernel: $(KERNEL_XO)
 
 $(KERNEL_XO): src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
 	$(MAKE) vitis-check TARGET=$(TARGET)
-	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) --save-temps -g \
+	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) $(VPP_COMPILE_FREQ_FLAGS) --save-temps -g \
 		-Iinclude -k $(KERNEL_NAME) src/cronet_kernel.cpp -o $(KERNEL_XO)
 
 vitis-xsa: $(KERNEL_XSA)
 
 $(KERNEL_XSA): $(KERNEL_XO) $(VITIS_CFG)
-	$(VPP) -l -t $(TARGET) --platform $(BASE_PLATFORM) --save-temps -g \
+	$(VPP) -l -t $(TARGET) --platform $(BASE_PLATFORM) $(VPP_LINK_FREQ_FLAGS) --save-temps -g \
 		--config $(VITIS_CFG) $(KERNEL_XO) -o $(KERNEL_XSA)
 
 vitis-package: $(PACKAGE_STAMP)
