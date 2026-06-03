@@ -4,15 +4,46 @@
 #include <vector>
 
 #include "bin_io.hpp"
+#include "cronet_axi.hpp"
 #include "cronet_config.hpp"
 #include "cronet_half_type.hpp"
 
 extern "C" void cronet_kernel(
-    const cronet::fp16_t* branch_input,
-    const cronet::fp16_t* trunk_input,
-    cronet::fp16_t* output);
+    const cronet::axi_word_t* branch_input,
+    const cronet::axi_word_t* trunk_input,
+    cronet::axi_word_t* output,
+    cronet::cycle_count_t* profile_cycles);
 
 namespace {
+
+std::vector<cronet::axi_word_t> pack_words(
+    const std::vector<std::uint16_t>& src,
+    std::size_t packed_count) {
+
+    std::vector<cronet::axi_word_t> out(packed_count);
+    for (std::size_t word = 0; word < packed_count; ++word) {
+        for (int lane = 0; lane < cronet::FP16_PER_AXI_WORD; ++lane) {
+            const std::size_t i =
+                word * static_cast<std::size_t>(cronet::FP16_PER_AXI_WORD) +
+                static_cast<std::size_t>(lane);
+            out[word].lane[lane] = i < src.size() ? src[i] : 0;
+        }
+    }
+    return out;
+}
+
+std::vector<float> unpack_words_as_float(
+    const std::vector<cronet::axi_word_t>& src,
+    std::size_t count) {
+
+    std::vector<float> out(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t word = i / static_cast<std::size_t>(cronet::FP16_PER_AXI_WORD);
+        const int lane = static_cast<int>(i % static_cast<std::size_t>(cronet::FP16_PER_AXI_WORD));
+        out[i] = cronet::fp16_bits_to_float_local(src[word].lane[lane]);
+    }
+    return out;
+}
 
 bool run_one_case(
     const std::string& vector_root,
@@ -25,19 +56,20 @@ bool run_one_case(
     const std::string input_root = cronet::path_join(case_root, "inputs/fp16_words");
     const std::string golden_root = cronet::path_join(case_root, "golden/fp16_io_f32");
 
-    std::vector<float> branch_input;
-    std::vector<float> trunk_input;
+    std::vector<std::uint16_t> branch_words;
+    std::vector<std::uint16_t> trunk_words;
     std::vector<float> golden;
-    std::vector<float> output(cronet::FINAL_OUT_COUNT, 0.0f);
+    std::vector<cronet::axi_word_t> output(cronet::FINAL_OUT_AXI_WORDS);
+    cronet::cycle_count_t profile_cycles = 0;
 
     bool ok = true;
-    ok = cronet::load_fp16_words_as_float(
+    ok = cronet::load_bin_exact(
              cronet::path_join(input_root, "branch_input.bin"),
-             branch_input,
+             branch_words,
              cronet::BRANCH_IN_COUNT) && ok;
-    ok = cronet::load_fp16_words_as_float(
+    ok = cronet::load_bin_exact(
              cronet::path_join(input_root, "trunk_input.bin"),
-             trunk_input,
+             trunk_words,
              cronet::TRUNK_IN_COUNT) && ok;
     ok = cronet::load_bin_exact(
              cronet::path_join(golden_root, "final_output.bin"),
@@ -47,10 +79,17 @@ bool run_one_case(
         return false;
     }
 
-    cronet_kernel(branch_input.data(), trunk_input.data(), output.data());
+    const std::vector<cronet::axi_word_t> branch_input =
+        pack_words(branch_words, cronet::BRANCH_IN_AXI_WORDS);
+    const std::vector<cronet::axi_word_t> trunk_input =
+        pack_words(trunk_words, cronet::TRUNK_IN_AXI_WORDS);
+
+    cronet_kernel(branch_input.data(), trunk_input.data(), output.data(), &profile_cycles);
+    const std::vector<float> output_float =
+        unpack_words_as_float(output, cronet::FINAL_OUT_COUNT);
 
     const cronet::CompareStats stats =
-        cronet::compare_float_vectors(output, golden, abs_tol, rel_tol, "final_output", 8);
+        cronet::compare_float_vectors(output_float, golden, abs_tol, rel_tol, "final_output", 8);
     std::printf("CASE %s: %s\n", case_name.c_str(), stats.pass ? "PASS" : "FAIL");
     return stats.pass;
 }

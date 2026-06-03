@@ -1,5 +1,6 @@
 #include "cronet_config.hpp"
 #include "cronet_half_type.hpp"
+#include "cronet_axi.hpp"
 #include "generated/cronet_weights_fp16_half.hpp"
 
 #if defined(CRONET_USE_NATIVE_FLOAT_HALF)
@@ -14,6 +15,7 @@ inline float tanhf(float x) {
 } // namespace hls
 #else
 #include <hls_math.h>
+#include <hls_stream.h>
 #endif
 
 namespace cronet {
@@ -480,27 +482,43 @@ void linear_fixed(const fp16_t* input, const fp16_t* weight, const fp16_t* bias,
     }
 }
 
-} // namespace
-} // namespace cronet
+template<int COUNT, int WORD_COUNT>
+void load_packed_fp16(const axi_word_t* input, fp16_t* output) {
+#pragma HLS INLINE off
+    for (int word_idx = 0; word_idx < WORD_COUNT; ++word_idx) {
+        const axi_word_t packed = input[word_idx];
+        for (int lane = 0; lane < FP16_PER_AXI_WORD; ++lane) {
+#pragma HLS PIPELINE II=1
+            const int i = word_idx * FP16_PER_AXI_WORD + lane;
+            if (i < COUNT) {
+                output[i] = axi_get_lane(packed, lane);
+            }
+        }
+    }
+}
 
-extern "C" void cronet_kernel(
-    const cronet::fp16_t* branch_input,
-    const cronet::fp16_t* trunk_input,
-    cronet::fp16_t* output) {
+template<int COUNT, int WORD_COUNT>
+void store_packed_fp16(const fp16_t* input, axi_word_t* output) {
+#pragma HLS INLINE off
+    for (int word_idx = 0; word_idx < WORD_COUNT; ++word_idx) {
+        axi_word_t packed = 0;
+        for (int lane = 0; lane < FP16_PER_AXI_WORD; ++lane) {
+#pragma HLS PIPELINE II=1
+            const int i = word_idx * FP16_PER_AXI_WORD + lane;
+            const fp16_t value = i < COUNT ? input[i] : fp16_t(0.0f);
+            axi_set_lane(packed, lane, value);
+        }
+        output[word_idx] = packed;
+    }
+}
 
-#pragma HLS INTERFACE m_axi port=branch_input offset=slave bundle=gmem0 depth=12000
-#pragma HLS INTERFACE m_axi port=trunk_input offset=slave bundle=gmem1 depth=2562
-#pragma HLS INTERFACE m_axi port=output offset=slave bundle=gmem1 depth=2562
-#pragma HLS INTERFACE s_axilite port=branch_input bundle=control
-#pragma HLS INTERFACE s_axilite port=trunk_input bundle=control
-#pragma HLS INTERFACE s_axilite port=output bundle=control
-#pragma HLS INTERFACE s_axilite port=return bundle=control
+void cronet_compute_from_local(
+    const fp16_t* branch_reshaped,
+    const fp16_t* trunk_unsqueezed,
+    fp16_t* final_output) {
 
-    using namespace cronet;
+#pragma HLS INLINE off
 
-    static_assert(NELX == 60 && NELY == 20, "cronet_kernel is specialized for the 60x20 design");
-
-    static fp16_t branch_reshaped[BRANCH_IN_COUNT];
     static fp16_t branch_conv1_pre[BRANCH_CONV1_OUT_COUNT];
     static fp16_t branch_conv1_silu_map[HISTORY][BRANCH_C1_OC][NELY][NELX];
     static fp16_t branch_conv2_pre[BRANCH_CONV2_OUT_COUNT];
@@ -516,7 +534,6 @@ extern "C" void cronet_kernel(
 #pragma HLS ARRAY_PARTITION variable=branch_conv1_silu_map cyclic factor=4 dim=2
 #pragma HLS ARRAY_PARTITION variable=branch_conv2_weight_ic4 complete dim=3
 
-    static fp16_t trunk_unsqueezed[TRUNK_IN_COUNT];
     static fp16_t trunk_conv1_pre[TRUNK_CONV1_OUT_COUNT];
     static fp16_t trunk_conv1_silu_map[TRUNK_C1_OC][NODE_H][NODE_W][TRUNK_CONV1_OUT_W];
     static fp16_t trunk_conv2_pre[TRUNK_CONV2_OUT_COUNT];
@@ -529,13 +546,6 @@ extern "C" void cronet_kernel(
 
 #pragma HLS ARRAY_PARTITION variable=trunk_conv1_silu_map cyclic factor=8 dim=1
 #pragma HLS ARRAY_PARTITION variable=trunk_conv2_weight_ic8 complete dim=3
-
-    for (int i = 0; i < BRANCH_IN_COUNT; ++i) {
-        branch_reshaped[i] = branch_input[i];
-    }
-    for (int i = 0; i < TRUNK_IN_COUNT; ++i) {
-        trunk_unsqueezed[i] = trunk_input[i];
-    }
 
     branch_conv1_60x20(branch_reshaped, branch_conv1_pre);
     silu_branch_conv1_to_map(branch_conv1_pre, branch_conv1_silu_map);
@@ -566,6 +576,95 @@ extern "C" void cronet_kernel(
 
     for (int i = 0; i < FINAL_OUT_COUNT; ++i) {
         const fp16_t product = h_mul(branch_fc2[i], trunk_fc2[i]);
-        output[i] = h_add(product, weights_fp16::out_bias[0]);
+        final_output[i] = h_add(product, weights_fp16::out_bias[0]);
     }
+}
+
+#if !defined(CRONET_USE_NATIVE_FLOAT_HALF)
+void compute_cycle_counter(
+    hls::stream<bool>& started,
+    hls::stream<bool>& stopped,
+    cycle_count_t* profile_cycles) {
+
+#pragma HLS INLINE off
+    started.read();
+
+    cycle_count_t cycles = 0;
+    bool done = false;
+    while (!done) {
+#pragma HLS PIPELINE II=1
+        bool token = false;
+        if (stopped.read_nb(token)) {
+            done = true;
+        } else {
+            ++cycles;
+        }
+    }
+
+    profile_cycles[0] = cycles;
+}
+
+void run_compute_profiled(
+    hls::stream<bool>& started,
+    hls::stream<bool>& stopped,
+    const fp16_t* branch_local,
+    const fp16_t* trunk_local,
+    fp16_t* final_output) {
+
+#pragma HLS INLINE off
+    started.write(true);
+    cronet_compute_from_local(branch_local, trunk_local, final_output);
+    stopped.write(true);
+}
+#endif
+
+} // namespace
+} // namespace cronet
+
+extern "C" void cronet_kernel(
+    const cronet::axi_word_t* branch_input,
+    const cronet::axi_word_t* trunk_input,
+    cronet::axi_word_t* output,
+    cronet::cycle_count_t* profile_cycles) {
+
+#pragma HLS INTERFACE m_axi port=branch_input offset=slave bundle=gmem0 depth=375
+#pragma HLS INTERFACE m_axi port=trunk_input offset=slave bundle=gmem1 depth=81
+#pragma HLS INTERFACE m_axi port=output offset=slave bundle=gmem2 depth=81
+#pragma HLS INTERFACE m_axi port=profile_cycles offset=slave bundle=gmem2 depth=1
+#pragma HLS INTERFACE s_axilite port=branch_input bundle=control
+#pragma HLS INTERFACE s_axilite port=trunk_input bundle=control
+#pragma HLS INTERFACE s_axilite port=output bundle=control
+#pragma HLS INTERFACE s_axilite port=profile_cycles bundle=control
+#pragma HLS INTERFACE s_axilite port=return bundle=control
+
+    using namespace cronet;
+
+    static_assert(NELX == 60 && NELY == 20, "cronet_kernel is specialized for the 60x20 design");
+    static_assert(BRANCH_IN_AXI_WORDS == 375, "unexpected branch input packing");
+    static_assert(TRUNK_IN_AXI_WORDS == 81, "unexpected trunk input packing");
+    static_assert(FINAL_OUT_AXI_WORDS == 81, "unexpected output packing");
+
+    static fp16_t branch_local[BRANCH_IN_COUNT];
+    static fp16_t trunk_local[TRUNK_IN_COUNT];
+    static fp16_t final_local[FINAL_OUT_COUNT];
+
+    load_packed_fp16<BRANCH_IN_COUNT, BRANCH_IN_AXI_WORDS>(branch_input, branch_local);
+    load_packed_fp16<TRUNK_IN_COUNT, TRUNK_IN_AXI_WORDS>(trunk_input, trunk_local);
+
+#if defined(CRONET_USE_NATIVE_FLOAT_HALF)
+    cronet_compute_from_local(branch_local, trunk_local, final_local);
+    profile_cycles[0] = 0;
+#else
+    hls::stream<bool> counter_started;
+    hls::stream<bool> counter_stopped;
+#pragma HLS STREAM variable=counter_started depth=1
+#pragma HLS STREAM variable=counter_stopped depth=1
+    {
+#pragma HLS DATAFLOW
+        compute_cycle_counter(counter_started, counter_stopped, profile_cycles);
+        run_compute_profiled(counter_started, counter_stopped, branch_local, trunk_local, final_local);
+    }
+#endif
+
+    store_packed_fp16<FINAL_OUT_COUNT, FINAL_OUT_AXI_WORDS>(final_local, output);
 }

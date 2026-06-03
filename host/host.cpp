@@ -21,6 +21,17 @@ namespace {
 constexpr std::size_t kBranchInputCount = 10 * 20 * 60;
 constexpr std::size_t kTrunkInputCount = 21 * 61 * 2;
 constexpr std::size_t kOutputCount = kTrunkInputCount;
+constexpr std::size_t kFp16PerAxiWord = 32;
+constexpr std::size_t kBranchInputWords = (kBranchInputCount + kFp16PerAxiWord - 1) / kFp16PerAxiWord;
+constexpr std::size_t kTrunkInputWords = (kTrunkInputCount + kFp16PerAxiWord - 1) / kFp16PerAxiWord;
+constexpr std::size_t kOutputWords = (kOutputCount + kFp16PerAxiWord - 1) / kFp16PerAxiWord;
+constexpr double kKernelClockHz = 250000000.0;
+
+struct alignas(64) PackedFp16x32 {
+    std::uint16_t lane[kFp16PerAxiWord];
+};
+
+static_assert(sizeof(PackedFp16x32) == 64, "PackedFp16x32 must match ap_uint<512>");
 
 using Clock = std::chrono::high_resolution_clock;
 using TimePoint = Clock::time_point;
@@ -175,6 +186,31 @@ bool compare_output(
     return ok;
 }
 
+std::vector<PackedFp16x32> pack_fp16_words(
+    const std::vector<std::uint16_t>& src,
+    std::size_t packed_words) {
+
+    std::vector<PackedFp16x32> out(packed_words);
+    for (std::size_t word = 0; word < packed_words; ++word) {
+        for (std::size_t lane = 0; lane < kFp16PerAxiWord; ++lane) {
+            const std::size_t i = word * kFp16PerAxiWord + lane;
+            out[word].lane[lane] = i < src.size() ? src[i] : 0;
+        }
+    }
+    return out;
+}
+
+std::vector<std::uint16_t> unpack_fp16_words(
+    const PackedFp16x32* src,
+    std::size_t count) {
+
+    std::vector<std::uint16_t> out(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        out[i] = src[i / kFp16PerAxiWord].lane[i % kFp16PerAxiWord];
+    }
+    return out;
+}
+
 void usage(const char* argv0) {
     std::cerr << "Usage: " << argv0
               << " <xclbin> [vector_root=data/cronet_hls_fp16_vectors] [case=sanity] [abs_tol=2e-2] [rel_tol=2e-2] [n_iter=1]\n";
@@ -218,6 +254,8 @@ int main(int argc, char** argv) {
         const auto branch_input = load_bin<std::uint16_t>(path_join(input_root, "branch_input.bin"), kBranchInputCount);
         const auto trunk_input = load_bin<std::uint16_t>(path_join(input_root, "trunk_input.bin"), kTrunkInputCount);
         const auto golden = load_bin<float>(path_join(golden_root, "final_output.bin"), kOutputCount);
+        const auto branch_packed = pack_fp16_words(branch_input, kBranchInputWords);
+        const auto trunk_packed = pack_fp16_words(trunk_input, kTrunkInputWords);
         const TimePoint t_load_end = Clock::now();
 
         const TimePoint t_xrt_start = Clock::now();
@@ -227,28 +265,33 @@ int main(int argc, char** argv) {
         const TimePoint t_xrt_end = Clock::now();
 
         const TimePoint t_bo_start = Clock::now();
-        auto bo_branch = xrt::bo(device, kBranchInputCount * sizeof(std::uint16_t), kernel.group_id(0));
-        auto bo_trunk = xrt::bo(device, kTrunkInputCount * sizeof(std::uint16_t), kernel.group_id(1));
-        auto bo_output = xrt::bo(device, kOutputCount * sizeof(std::uint16_t), kernel.group_id(2));
+        auto bo_branch = xrt::bo(device, kBranchInputWords * sizeof(PackedFp16x32), kernel.group_id(0));
+        auto bo_trunk = xrt::bo(device, kTrunkInputWords * sizeof(PackedFp16x32), kernel.group_id(1));
+        auto bo_output = xrt::bo(device, kOutputWords * sizeof(PackedFp16x32), kernel.group_id(2));
+        auto bo_cycles = xrt::bo(device, sizeof(std::uint64_t), kernel.group_id(3));
 
-        auto branch_map = bo_branch.map<std::uint16_t*>();
-        auto trunk_map = bo_trunk.map<std::uint16_t*>();
-        auto output_map = bo_output.map<std::uint16_t*>();
+        auto branch_map = bo_branch.map<PackedFp16x32*>();
+        auto trunk_map = bo_trunk.map<PackedFp16x32*>();
+        auto output_map = bo_output.map<PackedFp16x32*>();
+        auto cycles_map = bo_cycles.map<std::uint64_t*>();
         const TimePoint t_bo_end = Clock::now();
 
         const TimePoint t_host_copy_start = Clock::now();
-        std::copy(branch_input.begin(), branch_input.end(), branch_map);
-        std::copy(trunk_input.begin(), trunk_input.end(), trunk_map);
-        std::fill(output_map, output_map + kOutputCount, 0);
+        std::copy(branch_packed.begin(), branch_packed.end(), branch_map);
+        std::copy(trunk_packed.begin(), trunk_packed.end(), trunk_map);
+        std::memset(output_map, 0, kOutputWords * sizeof(PackedFp16x32));
+        *cycles_map = 0;
         const TimePoint t_host_copy_end = Clock::now();
 
         const TimePoint t_output_init_start = Clock::now();
         bo_output.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        bo_cycles.sync(XCL_BO_SYNC_BO_TO_DEVICE);
         const TimePoint t_output_init_end = Clock::now();
 
         double h2d_sync_ms = 0.0;
         double kernel_run_ms = 0.0;
         double d2h_sync_ms = 0.0;
+        std::uint64_t last_core_cycles = 0;
 
         std::cout << "Launching cronet_kernel for " << n_iter << " iteration(s)...\n";
         for (std::size_t iter = 0; iter < n_iter; ++iter) {
@@ -259,21 +302,22 @@ int main(int argc, char** argv) {
             h2d_sync_ms += elapsed_ms(t_h2d_start, t_h2d_end);
 
             const TimePoint t_kernel_start = Clock::now();
-            auto run = kernel(bo_branch, bo_trunk, bo_output);
+            auto run = kernel(bo_branch, bo_trunk, bo_output, bo_cycles);
             run.wait();
             const TimePoint t_kernel_end = Clock::now();
             kernel_run_ms += elapsed_ms(t_kernel_start, t_kernel_end);
 
             const TimePoint t_d2h_start = Clock::now();
             bo_output.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+            bo_cycles.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
             const TimePoint t_d2h_end = Clock::now();
             d2h_sync_ms += elapsed_ms(t_d2h_start, t_d2h_end);
+            last_core_cycles = *cycles_map;
         }
         std::cout << "Kernel completed.\n";
 
         const TimePoint t_output_copy_start = Clock::now();
-        std::vector<std::uint16_t> output_words(kOutputCount);
-        std::copy(output_map, output_map + kOutputCount, output_words.begin());
+        const std::vector<std::uint16_t> output_words = unpack_fp16_words(output_map, kOutputCount);
         const TimePoint t_output_copy_end = Clock::now();
 
         std::cout << "output[0]=" << fp16_bits_to_float(output_words[0])
@@ -293,8 +337,13 @@ int main(int argc, char** argv) {
         const double compare_ms = elapsed_ms(t_compare_start, t_compare_end);
         const double inference_io_ms = h2d_sync_ms + kernel_run_ms + d2h_sync_ms;
         const double total_host_ms = elapsed_ms(t_total_start, t_total_end);
+        const double core_ms_250mhz =
+            (static_cast<double>(last_core_cycles) / kKernelClockHz) * 1000.0;
 
         std::cout << "timing_iterations " << n_iter << "\n";
+        std::cout << "kernel_core_cycles " << last_core_cycles << "\n";
+        std::cout << "kernel_core_ms_at_250mhz "
+                  << std::fixed << std::setprecision(6) << core_ms_250mhz << "\n";
         print_timing_total("file_load", file_load_ms);
         print_timing_total("xrt_setup", xrt_setup_ms);
         print_timing_total("bo_setup", bo_setup_ms);

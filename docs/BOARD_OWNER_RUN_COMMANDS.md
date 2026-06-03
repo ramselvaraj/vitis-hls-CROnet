@@ -53,6 +53,8 @@ Expected successful output includes:
 ```text
 compare final_output: PASS ...
 timing_iterations 100
+kernel_core_cycles ...
+kernel_core_ms_at_250mhz ...
 timing_ms kernel_run    total ... avg ...
 timing_ms inference_io  total ... avg ...
 CRONET XRT TEST PASS
@@ -60,6 +62,10 @@ CRONET XRT TEST PASS
 
 Timing meanings:
 
+- `kernel_core_cycles`: cycle counter measured inside the HLS kernel after packed
+  DDR inputs are copied into local memory and before packed output is written
+  back to DDR.
+- `kernel_core_ms_at_250mhz`: `kernel_core_cycles` converted using the 250 MHz
+  handoff clock.
 - `kernel_run avg`: average XRT kernel execution time.
 - `inference_io avg`: average host-to-device sync + kernel run + device-to-host sync time.
-

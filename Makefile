@@ -65,10 +65,10 @@ half-native-smoke: src/cronet_half_debug.cpp tests/tb_half_layerwise.cpp include
 	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) -DCRONET_HALF_DEBUG_SINGLE_TRANSLATION_UNIT tests/tb_half_layerwise.cpp -o $(BUILD_DIR)/tb_half_layerwise_native_stub
 	$(BUILD_DIR)/tb_half_layerwise_native_stub $(VECTORS) all
 
-kernel-native-smoke: src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
+kernel-native-smoke: src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/cronet_axi.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
 	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) -c src/cronet_kernel.cpp -o $(BUILD_DIR)/cronet_kernel_native_stub.o
 
-kernel-native-test: src/cronet_kernel.cpp tests/tb_kernel_native.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp include/bin_io.hpp | $(BUILD_DIR)
+kernel-native-test: src/cronet_kernel.cpp tests/tb_kernel_native.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/cronet_axi.hpp include/generated/cronet_weights_fp16_half.hpp include/bin_io.hpp | $(BUILD_DIR)
 	$(NATIVE_CXX) $(NATIVE_CXXFLAGS) tests/tb_kernel_native.cpp src/cronet_kernel.cpp -o $(BUILD_DIR)/tb_kernel_native
 	$(BUILD_DIR)/tb_kernel_native $(VECTORS) all
 
@@ -100,7 +100,7 @@ vitis-hw-preflight:
 
 vitis-kernel: $(KERNEL_XO)
 
-$(KERNEL_XO): src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
+$(KERNEL_XO): src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/cronet_axi.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
 	$(MAKE) vitis-check TARGET=$(TARGET)
 	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) $(VPP_COMPILE_FREQ_FLAGS) --save-temps -g \
 		-Iinclude -k $(KERNEL_NAME) src/cronet_kernel.cpp -o $(KERNEL_XO)
