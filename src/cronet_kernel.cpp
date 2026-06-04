@@ -580,7 +580,7 @@ void cronet_compute_from_local(
     }
 }
 
-#if !defined(CRONET_USE_NATIVE_FLOAT_HALF)
+#if defined(CRONET_ENABLE_HW_CORE_COUNTER) && !defined(CRONET_USE_NATIVE_FLOAT_HALF)
 void compute_cycle_counter(
     hls::stream<bool>& started,
     hls::stream<bool>& stopped,
@@ -651,10 +651,7 @@ extern "C" void cronet_kernel(
     load_packed_fp16<BRANCH_IN_COUNT, BRANCH_IN_AXI_WORDS>(branch_input, branch_local);
     load_packed_fp16<TRUNK_IN_COUNT, TRUNK_IN_AXI_WORDS>(trunk_input, trunk_local);
 
-#if defined(CRONET_USE_NATIVE_FLOAT_HALF)
-    cronet_compute_from_local(branch_local, trunk_local, final_local);
-    profile_cycles[0] = 0;
-#else
+#if defined(CRONET_ENABLE_HW_CORE_COUNTER) && !defined(CRONET_USE_NATIVE_FLOAT_HALF)
     hls::stream<bool> counter_started;
     hls::stream<bool> counter_stopped;
 #pragma HLS STREAM variable=counter_started depth=1
@@ -664,6 +661,9 @@ extern "C" void cronet_kernel(
         compute_cycle_counter(counter_started, counter_stopped, profile_cycles);
         run_compute_profiled(counter_started, counter_stopped, branch_local, trunk_local, final_local);
     }
+#else
+    cronet_compute_from_local(branch_local, trunk_local, final_local);
+    profile_cycles[0] = 0;
 #endif
 
     store_packed_fp16<FINAL_OUT_COUNT, FINAL_OUT_AXI_WORDS>(final_local, output);

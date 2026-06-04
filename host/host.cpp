@@ -344,6 +344,9 @@ int main(int argc, char** argv) {
         std::cout << "kernel_core_cycles " << last_core_cycles << "\n";
         std::cout << "kernel_core_ms_at_250mhz "
                   << std::fixed << std::setprecision(6) << core_ms_250mhz << "\n";
+        if (last_core_cycles == 0) {
+            std::cout << "kernel_core_note unavailable_in_this_build\n";
+        }
         print_timing_total("file_load", file_load_ms);
         print_timing_total("xrt_setup", xrt_setup_ms);
         print_timing_total("bo_setup", bo_setup_ms);

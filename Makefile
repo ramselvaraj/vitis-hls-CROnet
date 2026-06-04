@@ -17,6 +17,7 @@ KERNEL_FREQ ?=
 endif
 VPP_COMPILE_FREQ_FLAGS = $(if $(KERNEL_FREQ),--freqhz=$(KERNEL_FREQ),)
 VPP_LINK_FREQ_FLAGS = $(if $(KERNEL_FREQ),--freqhz=$(KERNEL_FREQ):$(KERNEL_CU),)
+VPP_KERNEL_DEFINES = $(if $(filter $(TARGET),hw hw_emu),-DCRONET_ENABLE_HW_CORE_COUNTER,)
 
 VITIS_HOME ?= $(shell dirname "$$(dirname "$$(which vitis 2>/dev/null)")" 2>/dev/null)
 PLATFORM_USE ?= xilinx_vek280_base_202410_1
@@ -102,7 +103,7 @@ vitis-kernel: $(KERNEL_XO)
 
 $(KERNEL_XO): src/cronet_kernel.cpp include/cronet_config.hpp include/cronet_half_type.hpp include/cronet_axi.hpp include/generated/cronet_weights_fp16_half.hpp | $(BUILD_DIR)
 	$(MAKE) vitis-check TARGET=$(TARGET)
-	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) $(VPP_COMPILE_FREQ_FLAGS) --save-temps -g \
+	$(VPP) -c -t $(TARGET) --platform $(BASE_PLATFORM) $(VPP_COMPILE_FREQ_FLAGS) $(VPP_KERNEL_DEFINES) --save-temps -g \
 		-Iinclude -k $(KERNEL_NAME) src/cronet_kernel.cpp -o $(KERNEL_XO)
 
 vitis-xsa: $(KERNEL_XSA)
