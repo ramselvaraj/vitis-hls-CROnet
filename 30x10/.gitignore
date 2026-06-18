@@ -1,0 +1,52 @@
+# ---- Vitis / HLS build artifacts ----
+build/
+_x/
+.ipcache/
+.Xil/
+*.xclbin
+*.xo
+*.xsa
+*.ltx
+*.bit
+*.pdi
+*.bin
+*.img
+
+# Vitis logs / journals / summaries
+*.log
+*.jou
+*.backup.log
+*.compile_summary
+*.link_summary
+*.package_summary
+xcd.log
+xclbin_info.txt
+v++_*.log
+
+# ---- Large data / vector package (regenerate per data/README.md) ----
+data/cronet_hls_fp16_vectors/
+*.zip
+*.tar.gz
+
+# ---- Generated weight ROM headers (regenerate via scripts/gen_fp16_*.py) ----
+include/generated/
+
+# ---- Disposable probe / experiment workspaces ----
+counter_probe_hls/
+counter_compute_only/
+counter_cycle_nohang/
+host_timer_probe/
+hls_latency_dump/
+analyzer_input/
+
+# ---- Misc snapshots / baselines ----
+bram_snapshot_*.txt
+opt*_baseline_*.txt
+
+# ---- Editor / OS ----
+*.o
+*.exe
+*.out
+.vscode/
+.DS_Store
+*~
